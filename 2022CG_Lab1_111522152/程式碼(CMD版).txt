@@ -1,0 +1,1504 @@
+#include <GL/glut.h>
+#include <GL/gl.h>
+#include<cmath>
+#include<fstream>
+#include<iostream>
+#include<string>
+#include<vector>
+#include<map>
+#include<random>
+int height = 800, width = 800, window, line_x = -1, line_y = -1, p_origin_x = -1, p_origin_y = -1, last_x = -1, last_y = -1, last_x2 = -1, last_y2 = -1;
+char last_draw = '\0';
+bool reset = false, check_line = true;
+std::ifstream file;
+std::map<std::string, int>mp = { {"reset",1},{"translate",2} ,{"scale",3} ,{"rotate",4} ,{"clearData",5} ,{"clearScreen",6} ,{"viewport",7} ,{"square",8} ,
+    {"triangle",9},{"end",10},{"observer",11},{"object",12},{"display",13}, {"ambient",14},{"background",15},{"light",16} };
+std::map<std::string, int>object_mp = { {"v",1},{"f",2} };
+std::vector<std::vector<float>>square_destination = {};
+std::vector<std::vector<float>>triangle_destination = {};
+std::vector<std::vector<float>>transform = { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} };
+std::vector<std::vector<float>>square_constructor = { {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1} };
+std::vector<std::vector<float>>triangle_constructor = { {0,1,1}, {-1,-1,1}, {1,-1,1} };
+std::vector<std::vector<std::vector<float>>>vetices;
+std::vector<std::vector<std::vector<float>>>vertice_color;
+std::vector<std::vector<std::vector<int>>>face;
+std::map<int, std::vector<float>>lights;
+std::vector<float>ambient(3);
+std::vector<std::vector<float>>object_light_coefficient;
+std::vector<std::vector<float>> V_matrix;
+std::vector<std::vector<float>> perspective_projection;
+std::vector<std::vector<float>>z_buffer;
+std::vector<std::vector<std::vector<float>>>c_buffer;
+std::vector<float>background_color(3);
+std::string object_file_path;
+float current_z = FLT_MAX,alter_current_z= FLT_MAX,x_z_minus = 0, y_z_minus = 0, D = 0, n1 = 0, n2 = 0, n3 = 1;
+void display();
+void drawSquare(int x, int y, float red, float green, float blue);
+void midpoint_line_drawing(int x1, int y1, int x2, int y2, float red, float green, float blue);
+void midpoint_circle_drawing(int x1, int y1, int x2, int y2, float red, float green, float blue);
+void undo(int x, int y);
+void mouse(int bin, int state, int x, int y) {
+    if (bin == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+        switch (last_draw)
+        {
+        case('d'):
+            drawSquare(x, y, 1, 0, 0);
+            last_x = x;
+            last_y = y;
+            break;
+        case('l'):
+            if (line_x < 0) {
+                line_x = x;
+                line_y = y;
+            }
+            else {
+                midpoint_line_drawing(line_x, line_y, x, y, 0, 1, 0);
+                last_x = x;
+                last_y = y;
+                last_x2 = line_x;
+                last_y2 = line_y;
+                line_x = -1;
+                line_y = -1;
+            }
+            break;
+        case('o'):
+            if (line_x < 0) {
+                line_x = x;
+                line_y = y;
+            }
+            else {
+                midpoint_circle_drawing(line_x, line_y, x, y, 0, 0, 1);
+                last_x = x;
+                last_y = y;
+                last_x2 = line_x;
+                last_y2 = line_y;
+                line_x = -1;
+                line_y = -1;
+            }
+            break;
+        case('p'):
+            if (line_x > 0) {
+                midpoint_line_drawing(line_x, line_y, x, y, 1, 0, 1);
+                last_x = x;
+                last_y = y;
+            }
+            else {
+                p_origin_x = x;
+                p_origin_y = y;
+            }
+            line_x = x;
+            line_y = y;
+            break;
+        default:
+            break;
+        }
+    }
+}
+void draw_triangle(int x1, int y1, int x2, int y2, int x3, int y3) {
+
+}
+void draw_mode(unsigned char key, int x, int y) {
+    switch (key)
+    {
+    case('d'):
+        line_x = -1, line_y = -1;
+        break;
+    case('l'):
+        line_x = -1, line_y = -1;
+        break;
+    case('o'):
+        line_x = -1, line_y = -1;
+        break;
+    case('p'):
+        if (p_origin_x >= 0) {
+            midpoint_line_drawing(p_origin_x, p_origin_y, line_x, line_y, 1, 0, 1);
+            last_x2 = p_origin_x;
+            last_y2 = p_origin_y;
+        }
+        p_origin_x = -1, p_origin_y = -1;
+        line_x = -1, line_y = -1;
+        break;
+    case('r'):
+        undo(last_x, last_y);
+        line_x = -1, line_y = -1;
+        last_x = -1, last_y = -1;
+        break;
+    case('q'):
+        glutDestroyWindow(window);
+        break;
+    case('c'):
+        glClear(GL_COLOR_BUFFER_BIT);
+        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glFlush();
+        break;
+    default:
+        break;
+    }
+    last_draw = key;
+}
+void undo(int x, int y) {
+    switch (last_draw)
+    {
+    case('d'):
+        drawSquare(x, y, 0, 0, 0);
+        break;
+    case('l'):
+        midpoint_line_drawing(last_x2, last_y2, x, y, 0, 0, 0);
+        break;
+    case('o'):
+        midpoint_circle_drawing(last_x2, last_y2, x, y, 0, 0, 0);
+        break;
+    case('p'):
+        midpoint_line_drawing(last_x2, last_y2, x, y, 0, 0, 0);
+        break;
+    default:
+        break;
+    }
+    last_draw = '\0';
+}
+void draw(unsigned char key, int x, int y) {
+    std::string command;
+    while (file >> command) {
+        if (command[0] != '#') {
+            switch (mp[command])
+            {
+            case(1):
+                std::cout << command << std::endl;
+                transform = { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} };
+                break;
+            case(2):
+                std::cout << command + " ";
+                file >> command;
+                transform[0][3] += stof(command);
+                std::cout << command + " ";
+                file >> command;
+                transform[1][3] += stof(command);
+                std::cout << command + " ";
+                file >> command;
+                transform[2][3] += stof(command);
+                std::cout << command << std::endl;
+                for (int i = 0; i < transform.size(); i++) {
+                    for (int j = 0; j < transform[i].size(); j++) {
+                        std::cout << transform[i][j] << " ";
+                    }
+                    std::cout << std::endl;
+                }
+                break;
+            case(3):
+                std::cout << command + " ";
+                file >> command;
+                transform[0][0] *= stof(command);
+                std::cout << command + " ";
+                file >> command;
+                transform[1][1] *= stof(command);
+                std::cout << command + " ";
+                file >> command;
+                transform[2][2] *= stof(command);
+                std::cout << command << std::endl;
+                for (int i = 0; i < transform.size(); i++) {
+                    for (int j = 0; j < transform[i].size(); j++) {
+                        std::cout << transform[i][j] << " ";
+                    }
+                    std::cout << std::endl;
+                }
+                break;
+            case(4):
+            {
+                std::cout << command + " ";
+                file >> command;
+                std::cout << command + " ";
+                float cos = std::cos(stof(command) * 3.14159 / 180), sin = std::sin(stof(command) * 3.14159 / 180);
+                std::vector<std::vector<float>> rotate_matrix1 = { {1,0,0,0},{0,cos,-sin,0},{0,sin,cos,0},{0,0,0,1} };
+                file >> command;
+                std::cout << command + " ";
+                cos = std::cos(stof(command) * 3.14159 / 180), sin = std::sin(stof(command) * 3.14159 / 180);
+                std::vector<std::vector<float>> rotate_matrix2 = { {cos,0,sin,0},{0,1,0,0},{-sin,0,cos,0},{0,0,0,1} };
+                file >> command;
+                std::cout << command << std::endl;
+                cos = std::cos(stof(command) * 3.14159 / 180), sin = std::sin(stof(command) * 3.14159 / 180);
+                std::vector<std::vector<float>> rotate_matrix3 = { {cos,-sin,0,0},{sin,cos,0,0},{0,0,1,0},{0,0,0,1} };
+                std::vector<std::vector<float>> temp_vector = rotate_matrix3;
+                for (int i = 0; i < rotate_matrix1.size(); i++) {
+                    for (int j = 0; j < rotate_matrix1[i].size(); j++) {
+                        float temp = 0;
+                        for (int k = 0; k < rotate_matrix1.size(); k++) {
+                            temp += temp_vector[i][k] * rotate_matrix2[k][j];
+                        }
+                        rotate_matrix3[i][j] = temp;
+                    }
+                }
+                temp_vector = rotate_matrix1;
+                for (int i = 0; i < rotate_matrix1.size(); i++) {
+                    for (int j = 0; j < rotate_matrix1[i].size(); j++) {
+                        float temp = 0;
+                        for (int k = 0; k < rotate_matrix1.size(); k++) {
+                            temp += temp_vector[i][k] * rotate_matrix3[k][j];
+                        }
+                        rotate_matrix1[i][j] = temp;
+                    }
+                }
+                temp_vector = transform;
+                for (int i = 0; i < rotate_matrix1.size(); i++) {
+                    for (int j = 0; j < rotate_matrix1[i].size(); j++) {
+                        float temp = 0;
+                        for (int k = 0; k < rotate_matrix1.size(); k++) {
+                            temp += rotate_matrix1[i][k] * temp_vector[k][j];
+                        }
+                        transform[i][j] = temp;
+                    }
+                }
+            }
+            for (int i = 0; i < transform.size(); i++) {
+                for (int j = 0; j < transform[i].size(); j++) {
+                    std::cout << transform[i][j] << " ";
+                }
+                std::cout << std::endl;
+            }
+            break;
+            case(5):
+                std::cout << command << std::endl;
+                vetices.clear();
+                face.clear();
+                break;
+            case(6):
+                std::cout << command << std::endl;
+                glClear(GL_COLOR_BUFFER_BIT);
+                glClearColor(0.0, 0.0, 0.0, 0.0);
+                glFlush();
+                break;
+            case(7):
+                std::cout << command + " ";
+                float vxl, vxr, vyb, vyt;
+                file >> command;
+                std::cout << command + " ";
+                vxl = stof(command);
+                file >> command;
+                std::cout << command + " ";
+                vxr = stof(command);
+                file >> command;
+                std::cout << command + " ";
+                vyb = stof(command);
+                file >> command;
+                std::cout << command + " " << std::endl;
+                vyt = stof(command);
+                break;
+                //clipping
+                // 
+                //int wxl, wxr, wyb, wyt, vxl, vxr, vyb, vyt;
+                //std::cout << command + " "; 
+                //file >> command;
+                //std::cout << command + " ";
+                //wxl = stof(command);
+                //file >> command;
+                //std::cout << command + " ";
+                //wxr = stof(command);
+                //file >> command;
+                //std::cout << command + " ";
+                //wyb = stof(command);
+                //file >> command;
+                //std::cout << command + " ";
+                //wyt = stof(command);
+                //file >> command;
+                //std::cout << command + " ";
+                //vxl = stof(command);
+                //file >> command;
+                //std::cout << command + " ";
+                //vxr = stof(command);
+                //file >> command;
+                //std::cout << command + " ";
+                //vyb = height - stof(command);
+                //file >> command;
+                //std::cout << command << std::endl;
+                //vyt = height - stof(command);
+                //{
+                //    std::vector<bool>out_of_range(square_destination.size());
+                //    for (int i = 0; i < square_destination.size(); i++) {
+                //        if (square_destination[i][0]<wxl || square_destination[i][0]>wxr || square_destination[i][1]<wyb || square_destination[i][1]>wyt) {
+                //            out_of_range[i] = true;
+                //        }
+                //    }
+                //    std::vector<bool>triangle_out_of_range(triangle_destination.size());
+                //    for (int i = 0; i < triangle_destination.size(); i++) {
+                //        if (triangle_destination[i][0]<wxl || triangle_destination[i][0]>wxr || triangle_destination[i][1]<wyb || triangle_destination[i][1]>wyt) {
+                //            triangle_out_of_range[i] = true;
+                //        }
+                //    }
+                //    midpoint_line_drawing(vxr, vyb, vxr, vyt, 255, 255, 255);
+                //    midpoint_line_drawing(vxr, vyb, vxl, vyb, 255, 255, 255);
+                //    midpoint_line_drawing(vxl, vyb, vxl, vyt, 255, 255, 255);
+                //    midpoint_line_drawing(vxl, vyt, vxr, vyt, 255, 255, 255);
+                //    float scale_x = (vxr - vxl) / (wxr - wxl), scale_y = (vyt - vyb) / (wyt - wyb), bx = vxl - scale_x * wxl, by = vyb - scale_y * wyb;
+                //    for (int i = 0; i < square_destination.size() / 4; i++) {
+                //        float red = (float)1 / (std::rand() % 10), green = (float)1 / (std::rand() % 10), blue = (float)1 / (std::rand() % 10);
+                //        for (int j = 0; j < 4; j++) {
+                //            if (!out_of_range[i * 4 + j]) {
+                //                if (!out_of_range[i * 4 + (j + 1) % 4]) {
+                //                    midpoint_line_drawing(square_destination[i * 4 + j][0] * scale_x + bx, square_destination[i * 4 + j][1] * scale_y + by, square_destination[i * 4 + (j + 1) % 4][0] * scale_x + bx, square_destination[i * 4 + (j + 1) % 4][1] * scale_y + by, red, green, blue);
+                //                }
+                //                else {
+                //                    std::vector<float>temp1 = square_destination[i * 4 + (j + 1) % 4];
+                //                    std::vector<float>vectors = { square_destination[i * 4 + (j + 1) % 4][0] - square_destination[i * 4 + j][0],square_destination[i * 4 + (j + 1) % 4][1] - square_destination[i * 4 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (square_destination[i * 4 + (j + 1) % 4][0]<wxl || square_destination[i * 4 + (j + 1) % 4][0]>wxr || square_destination[i * 4 + (j + 1) % 4][1]<wyb || square_destination[i * 4 + (j + 1) % 4][1]>wyt) {
+                //                            square_destination[i * 4 + (j + 1) % 4][0] -= vectors[0];
+                //                            square_destination[i * 4 + (j + 1) % 4][1] -= vectors[1];
+                //                        }
+                //                        else {
+                //                            square_destination[i * 4 + (j + 1) % 4][0] += vectors[0];
+                //                            square_destination[i * 4 + (j + 1) % 4][1] += vectors[1];
+                //                        }
+
+                //                    }
+                //                    midpoint_line_drawing(square_destination[i * 4 + j][0] * scale_x + bx, square_destination[i * 4 + j][1] * scale_y + by, square_destination[i * 4 + (j + 1) % 4][0] * scale_x + bx, square_destination[i * 4 + (j + 1) % 4][1] * scale_y + by, red, green, blue);
+                //                    square_destination[i * 4 + (j + 1) % 4] = temp1;
+                //                }
+                //            }
+                //            else {
+                //                if (!out_of_range[i * 4 + (j + 1) % 4]) {
+                //                    std::vector<float>temp1 = square_destination[i * 4 + j];
+                //                    std::vector<float>vectors = { square_destination[i * 4 + (j + 1) % 4][0] - square_destination[i * 4 + j][0],square_destination[i * 4 + (j + 1) % 4][1] - square_destination[i * 4 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (square_destination[i * 4 + j][0] < wxl || square_destination[i * 4 + j][0] > wxr || square_destination[i * 4 + j][1] < wyb || square_destination[i * 4 + j][1] > wyt) {
+                //                            square_destination[i * 4 + j][0] += vectors[0];
+                //                            square_destination[i * 4 + j][1] += vectors[1];
+                //                        }
+                //                        else {
+                //                            square_destination[i * 4 + j][0] -= vectors[0];
+                //                            square_destination[i * 4 + j][1] -= vectors[1];
+                //                        }
+
+                //                    }
+                //                    midpoint_line_drawing(square_destination[i * 4 + j][0] * scale_x + bx, square_destination[i * 4 + j][1] * scale_y + by, square_destination[i * 4 + (j + 1) % 4][0] * scale_x + bx, square_destination[i * 4 + (j + 1) % 4][1] * scale_y + by, red, green, blue);
+                //                    square_destination[i * 4 + j] = temp1;
+                //                }
+                //                else {
+                //                    std::vector<float>temp1 = square_destination[i * 4 + j];
+                //                    std::vector<float>temp2 = square_destination[i * 4 + (j + 1) % 4];
+                //                    std::vector<float>vectors = { square_destination[i * 4 + (j + 1) % 4][0] - square_destination[i * 4 + j][0],square_destination[i * 4 + (j + 1) % 4][1] - square_destination[i * 4 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (square_destination[i * 4 + j][0] < wxl || square_destination[i * 4 + j][0] > wxr || square_destination[i * 4 + j][1] < wyb || square_destination[i * 4 + j][1] > wyt) {
+                //                            square_destination[i * 4 + j][0] += vectors[0];
+                //                            square_destination[i * 4 + j][1] += vectors[1];
+                //                        }
+                //                        else {
+                //                            square_destination[i * 4 + j][0] -= vectors[0];
+                //                            square_destination[i * 4 + j][1] -= vectors[1];
+                //                        }
+
+                //                    }
+                //                    vectors = { square_destination[i * 4 + (j + 1) % 4][0] - square_destination[i * 4 + j][0],square_destination[i * 4 + (j + 1) % 4][1] - square_destination[i * 4 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (square_destination[i * 4 + (j + 1) % 4][0]<wxl || square_destination[i * 4 + (j + 1) % 4][0]>wxr || square_destination[i * 4 + (j + 1) % 4][1]<wyb || square_destination[i * 4 + (j + 1) % 4][1]>wyt) {
+                //                            square_destination[i * 4 + (j + 1) % 4][0] -= vectors[0];
+                //                            square_destination[i * 4 + (j + 1) % 4][1] -= vectors[1];
+                //                        }
+                //                        else {
+                //                            square_destination[i * 4 + (j + 1) % 4][0] += vectors[0];
+                //                            square_destination[i * 4 + (j + 1) % 4][1] += vectors[1];
+                //                        }
+
+                //                    }
+                //                    if (!(square_destination[i][0]<wxl || square_destination[i][0]>wxr || square_destination[i][1]<wyb || square_destination[i][1]>wyt)) {
+                //                        midpoint_line_drawing(square_destination[i * 4 + j][0] * scale_x + bx, square_destination[i * 4 + j][1] * scale_y + by, square_destination[i * 4 + (j + 1) % 4][0] * scale_x + bx, square_destination[i * 4 + (j + 1) % 4][1] * scale_y + by, red, green, blue);
+                //                    }            
+                //                    square_destination[i * 4 + j] = temp1;
+                //                    square_destination[i * 4 + (j + 1) % 4] = temp2;
+                //                }
+                //            }
+                //        }
+                //    }
+                //    for (int i = 0; i < triangle_destination.size() / 3; i++) {
+                //        float red = (float)1 / (std::rand() % 10), green = (float)1 / (std::rand() % 10), blue = (float)1 / (std::rand() % 10);
+                //        for (int j = 0; j < 3; j++) {
+                //            if (!triangle_out_of_range[i * 3 + j]) {
+                //                if (!triangle_out_of_range[i * 3 + (j + 1) % 3]) {
+                //                    midpoint_line_drawing(triangle_destination[i * 3 + j][0] * scale_x + bx, triangle_destination[i * 3 + j][1] * scale_y + by, triangle_destination[i * 3 + (j + 1) % 3][0] * scale_x + bx, triangle_destination[i * 3 + (j + 1) % 3][1] * scale_y + by, red, green, blue);
+                //                }
+                //                else {
+                //                    std::vector<float>temp1 = triangle_destination[i * 3 + (j + 1) % 3];
+                //                    std::vector<float>vectors = { triangle_destination[i * 3 + (j + 1) % 3][0] - triangle_destination[i * 3 + j][0],triangle_destination[i * 3 + (j + 1) % 3][1] - triangle_destination[i * 3 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (triangle_destination[i * 3 + (j + 1) % 3][0]<wxl || triangle_destination[i * 3 + (j + 1) % 3][0]>wxr || triangle_destination[i * 3 + (j + 1) % 3][1]<wyb || triangle_destination[i * 3 + (j + 1) % 3][1]>wyt) {
+                //                            triangle_destination[i * 3 + (j + 1) % 3][0] -= vectors[0];
+                //                            triangle_destination[i * 3 + (j + 1) % 3][1] -= vectors[1];
+                //                        }
+                //                        else {
+                //                            triangle_destination[i * 3 + (j + 1) % 3][0] += vectors[0];
+                //                            triangle_destination[i * 3 + (j + 1) % 3][1] += vectors[1];
+                //                        }
+
+                //                    }
+                //                    midpoint_line_drawing(triangle_destination[i * 3 + j][0] * scale_x + bx, triangle_destination[i * 3 + j][1] * scale_y + by, triangle_destination[i * 3 + (j + 1) % 3][0] * scale_x + bx, triangle_destination[i * 3 + (j + 1) % 3][1] * scale_y + by, red, green, blue);
+                //                    triangle_destination[i * 3 + (j + 1) % 3] = temp1;
+                //                }
+                //            }
+                //            else {
+                //                if (!triangle_out_of_range[i * 3 + (j + 1) % 3]) {
+                //                    std::vector<float>temp1 = triangle_destination[i * 3 + j];
+                //                    std::vector<float>vectors = { triangle_destination[i * 3 + (j + 1) % 3][0] - triangle_destination[i * 3 + j][0],triangle_destination[i * 3 + (j + 1) % 3][1] - triangle_destination[i * 3 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (triangle_destination[i * 3 + j][0] < wxl || triangle_destination[i * 3 + j][0] > wxr || triangle_destination[i * 3 + j][1] < wyb || triangle_destination[i * 3 + j][1] > wyt) {
+                //                            triangle_destination[i * 3 + j][0] += vectors[0];
+                //                            triangle_destination[i * 3 + j][1] += vectors[1];
+                //                        }
+                //                        else {
+                //                            triangle_destination[i * 3 + j][0] -= vectors[0];
+                //                            triangle_destination[i * 3 + j][1] -= vectors[1];
+                //                        }
+
+                //                    }
+                //                    midpoint_line_drawing(triangle_destination[i * 3 + j][0] * scale_x + bx, triangle_destination[i * 3 + j][1] * scale_y + by, triangle_destination[i * 3 + (j + 1) % 3][0] * scale_x + bx, triangle_destination[i * 3 + (j + 1) % 3][1] * scale_y + by, red, green, blue);
+                //                    triangle_destination[i * 3 + j] = temp1;
+                //                }
+                //                else {
+                //                    std::vector<float>temp1 = triangle_destination[i * 3 + j];
+                //                    std::vector<float>temp2 = triangle_destination[i * 3 + (j + 1) % 3];
+                //                    std::vector<float>vectors = { triangle_destination[i * 3 + (j + 1) % 3][0] - triangle_destination[i * 3 + j][0],triangle_destination[i * 3 + (j + 1) % 3][1] - triangle_destination[i * 3 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (triangle_destination[i * 3 + j][0] < wxl || triangle_destination[i * 3 + j][0] > wxr || triangle_destination[i * 3 + j][1] < wyb || triangle_destination[i * 3 + j][1] > wyt) {
+                //                            triangle_destination[i * 3 + j][0] += vectors[0];
+                //                            triangle_destination[i * 3 + j][1] += vectors[1];
+                //                        }
+                //                        else {
+                //                            triangle_destination[i * 3 + j][0] -= vectors[0];
+                //                            triangle_destination[i * 3 + j][1] -= vectors[1];
+                //                        }
+
+                //                    }
+                //                    vectors = { triangle_destination[i * 3 + (j + 1) % 3][0] - triangle_destination[i * 3 + j][0],triangle_destination[i * 3 + (j + 1) % 3][1] - triangle_destination[i * 3 + j][1] };
+                //                    while (abs(vectors[0]) > 0.001 || abs(vectors[1]) > 0.001) {
+                //                        vectors[0] /= 2;
+                //                        vectors[1] /= 2;
+                //                        if (triangle_destination[i * 3 + (j + 1) % 3][0]<wxl || triangle_destination[i * 3 + (j + 1) % 3][0]>wxr || triangle_destination[i * 3 + (j + 1) % 3][1]<wyb || triangle_destination[i * 3 + (j + 1) % 3][1]>wyt) {
+                //                            triangle_destination[i * 3 + (j + 1) % 3][0] -= vectors[0];
+                //                            triangle_destination[i * 3 + (j + 1) % 3][1] -= vectors[1];
+                //                        }
+                //                        else {
+                //                            triangle_destination[i * 3 + (j + 1) % 3][0] += vectors[0];
+                //                            triangle_destination[i * 3 + (j + 1) % 3][1] += vectors[1];
+                //                        }
+
+                //                    }
+                //                    if (!(square_destination[i][0]<wxl || square_destination[i][0]>wxr || square_destination[i][1]<wyb || square_destination[i][1]>wyt)) {
+                //                        midpoint_line_drawing(triangle_destination[i * 3 + j][0] * scale_x + bx, triangle_destination[i * 3 + j][1] * scale_y + by, triangle_destination[i * 3 + (j + 1) % 3][0] * scale_x + bx, triangle_destination[i * 3 + (j + 1) % 3][1] * scale_y + by, red, green, blue);
+                //                    }
+                //                    triangle_destination[i * 3 + j] = temp1;
+                //                    triangle_destination[i * 3 + (j + 1) % 3] = temp2;
+                //                }
+                //            }
+                //        }
+                //    }
+                //}
+            case(8):
+                std::cout << command << std::endl;
+                for (int i = 0; i < transform.size(); i++) {
+                    for (int j = 0; j < transform[i].size(); j++) {
+                        std::cout << transform[i][j] << " ";
+                    }
+                    std::cout << std::endl;
+                }
+                for (int i = 0; i < 4; i++) {
+                    std::vector<float>temp = { 0,0 };
+                    for (int j = 0; j < transform.size() - 1; j++) {
+                        for (int k = 0; k < transform[j].size(); k++) {
+                            temp[j] += transform[j][k] * square_constructor[i][k];
+                        }
+                    }
+                    square_destination.push_back({ temp[0],temp[1] });
+                }
+                break;
+            case(9):
+                std::cout << command << std::endl;
+                for (int i = 0; i < transform.size(); i++) {
+                    for (int j = 0; j < transform[i].size(); j++) {
+                        std::cout << transform[i][j] << " ";
+                    }
+                    std::cout << std::endl;
+                }
+                for (int i = 0; i < 3; i++) {
+                    std::vector<float>temp = { 0,0 };
+                    for (int j = 0; j < transform.size() - 1; j++) {
+                        for (int k = 0; k < transform[j].size(); k++) {
+                            temp[j] += transform[j][k] * triangle_constructor[i][k];
+                        }
+                    }
+                    triangle_destination.push_back({ temp[0],temp[1] });
+                }
+                break;
+            case(10):
+                std::cout << command << std::endl;
+                system("pause");
+                glutDestroyWindow(window);
+                break;
+            case(11):
+            {
+                std::cout << command + " ";
+                float epx, epy, epz, COIx, COIy, COIz, Tilt, Hither, Yon, Hav;
+                file >> command;
+                epx = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                epy = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                epz = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                COIx = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                COIy = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                COIz = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                Tilt = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                Hither = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                Yon = stof(command);
+                std::cout << command + " ";
+                file >> command;
+                Hav = stof(command);
+                std::cout << command + " " << std::endl;
+                std::vector<std::vector<float>> mirror = { {-1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} };
+                std::vector<std::vector<float>> Teye = { {1,0,0,-epx},{0,1,0,-epy},{0,0,1,-epz},{0,0,0,1} };
+                std::vector<float>temp_vector = { 0,1,0 };
+                std::vector<float>forward = { COIx - epx,COIy - epy,COIz - epz };
+                float total = sqrt(forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2]);
+                forward[0] /= total; forward[1] /= total; forward[2] /= total;
+                std::vector<float>right = { COIz - epz,0,-COIx + epx };
+                total = sqrt(right[0] * right[0] + right[1] * right[1] + right[2] * right[2]);
+                right[0] /= total; right[1] /= total; right[2] /= total;
+                std::vector<float>up = { forward[1] * right[2] - forward[2] * right[1], forward[2] * right[0] - forward[0] * right[2], forward[0] * right[1] - forward[1] * right[0] };
+                total = sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+                up[0] /= total; up[1] /= total; up[2] /= total;
+                std::vector<std::vector<float>> temp_2D_vector1 = { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} };
+                std::vector<std::vector<float>> temp_2D_vector2 = { {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0} };
+                std::vector<std::vector<float>> temp_2D_vector3 = { {0,0,0,0},{0,0,0,0},{0,0,0,0},{0,0,0,0} };
+                std::vector<std::vector<float>> GRM = { {right[0],right[1],right[2],0},{up[0],up[1],up[2],0},{forward[0],forward[1],forward[2],0},{0,0,0,1} };
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        float temp = 0;
+                        for (int k = 0; k < 4; k++) {
+                            temp += mirror[i][k] * GRM[k][j];
+                        }
+                        temp_2D_vector1[i][j] = temp;
+                    }
+                }
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        float temp = 0;
+                        for (int k = 0; k < 4; k++) {
+                            temp += temp_2D_vector1[i][k] * Teye[k][j];
+                        }
+                        temp_2D_vector2[i][j] = temp;
+                    }
+                }
+                V_matrix = temp_2D_vector2;
+                float tan = std::tan(Hav * 3.14159 / 180);
+                perspective_projection = { {1,0,0,0},{0,(float)width / (float)height,0,0},{0,0,(Yon / (Yon - Hither)) * tan,(Hither * Yon / (Hither - Yon)) * tan},{0,0,tan,0} };
+            }
+            break;
+            case(12):
+            {
+                std::cout << command + " ";
+                file >> command;
+                std::cout << command + " ";
+                std::ifstream object_file;
+                object_file.open(object_file_path + "Mesh\\" + command);
+                //object_file.open("Mesh/" + command);
+                std::vector<float>object_light_coefficient_temp(6);
+                file >> command;
+                object_light_coefficient_temp[0] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                object_light_coefficient_temp[1] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                object_light_coefficient_temp[2] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                object_light_coefficient_temp[3] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                object_light_coefficient_temp[4] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                object_light_coefficient_temp[5] = std::stof(command);
+                object_light_coefficient.push_back(object_light_coefficient_temp);
+                std::cout << command << std::endl;
+                std::string object_command;
+                std::vector<std::vector<float>>vertice_temp;
+                std::vector<std::vector<int>>face_temp;
+                int temp1 = 0, temp2 = 0;
+                while (object_file >> object_command) {
+                    if (object_command[0] == '#') {
+                        std::getline(object_file, object_command);
+                        continue;
+                    }
+                    switch (object_mp[object_command])
+                    {
+                    case(1):
+                    {
+                        object_file >> object_command;
+                        std::vector<float>temp_vector;
+                        std::vector<float>output;
+                        temp_vector.push_back(std::stof(object_command));
+                        object_file >> object_command;
+                        temp_vector.push_back(std::stof(object_command));
+                        object_file >> object_command;
+                        temp_vector.push_back(std::stof(object_command));
+                        temp_vector.push_back(1);
+                        output = temp_vector;
+                        for (int i = 0; i < transform.size(); i++) {
+                            float temp = 0;
+                            for (int j = 0; j < transform[i].size(); j++) {
+                                temp += transform[i][j] * temp_vector[j];
+                            }
+                            output[i] = temp;
+                        }
+                        vertice_temp.push_back(output);
+                    }
+                    break;
+                    case(2):
+                    {
+                        object_file >> object_command;
+                        std::vector<int>temp_vector;
+                        std::string temp = "";
+                        for (int i = 0; i < object_command.size(); i++) {
+                            if (object_command[i] == '/') {
+                                break;
+                            }
+                            else {
+                                temp += object_command[i];
+                            }
+                        }
+                        temp_vector.push_back(std::stoi(temp));
+                        object_file >> object_command;
+                        temp = "";
+                        for (int i = 0; i < object_command.size(); i++) {
+                            if (object_command[i] == '/') {
+                                break;
+                            }
+                            else {
+                                temp += object_command[i];
+                            }
+                        }
+                        temp_vector.push_back(std::stoi(temp));
+                        object_file >> object_command;
+                        temp1 = std::stoi(temp);
+                        temp = "";
+                        for (int i = 0; i < object_command.size(); i++) {
+                            if (object_command[i] == '/') {
+                                break;
+                            }
+                            else {
+                                temp += object_command[i];
+                            }
+                        }
+                        temp_vector.push_back(std::stoi(temp));
+                        temp2 = std::stoi(temp);
+                        face_temp.push_back(temp_vector);
+                    }
+                    break;
+                    default:
+                        if (isdigit(object_command[0])) {
+                            face_temp.push_back({ temp1,temp2,std::stoi(object_command) });
+                        }
+                        else {
+                            std::getline(object_file, object_command);
+                        }
+                        break;
+                    }
+                }
+                face.push_back(face_temp);
+                vetices.push_back(vertice_temp);
+            }
+            break;
+            case(13):
+                for (int i = width / 4; i <= width * 3 / 4; i++) {
+                    midpoint_line_drawing(i, height / 4, i, height * 3 / 4, background_color[0]*255, background_color[1]*255, background_color[2]*255);
+                }
+                display();
+                {
+                    //for (int i = 0; i < face.size(); i++) {
+                    //    for (int j = 0; j < face[i].size(); j++) {
+                    //        std::vector<float>temp;
+                    //        std::vector <std::vector<float> >D2_temp;
+                    //        std::vector<std::vector <std::vector<float>>>D3_temp;
+                    //        float t11 = vetices[i][face[i][j][0] - 1][0] - vetices[i][face[i][j][1] - 1][0], t12 = vetices[i][face[i][j][0] - 1][1] - vetices[i][face[i][j][1] - 1][1],
+                    //            t13 = vetices[i][face[i][j][0] - 1][2] - vetices[i][face[i][j][1] - 1][2], t21 = vetices[i][face[i][j][0] - 1][0] - vetices[i][face[i][j][2] - 1][0],
+                    //            t22 = vetices[i][face[i][j][0] - 1][1] - vetices[i][face[i][j][2] - 1][1], t23 = vetices[i][face[i][j][0] - 1][2] - vetices[i][face[i][j][2] - 1][2];
+                    //        n1 = t12 * t23 - t13 * t22, n2 = t13 * t21 - t11 * t23, n3 = t11 * t22 - t12 * t21;
+                    //        float red = ambient[0] * object_light_coefficient[i][0], green = ambient[1] * object_light_coefficient[i][1], blue = ambient[2] * object_light_coefficient[i][2],
+                    //            red_diffuse = 0, green_diffuse = 0, blue_diffuse = 0, red_specular = 0, green_specular = 0, blue_specular = 0;
+                    //        for (auto k = lights.begin(); k != lights.end(); k++) {
+                    //            float cos1= n1 * (k->second[3])+n2 * (k->second[4])+ n3* (k->second[5]) / sqrtf((n1 * n1 + n2 * n2 + n3 * n3)), cos2;
+                    //            if (cos1 < 0) {
+                    //                cos1 = 0;
+                    //            }
+                    //            red_diffuse += object_light_coefficient[i][3] * k->second[0] * cos1;
+                    //            green_diffuse += object_light_coefficient[i][3] * k->second[1] * cos1;
+                    //            blue_diffuse += object_light_coefficient[i][3] * k->second[2] * cos1;
+                    //            red_specular += object_light_coefficient[i][4] * k->second[0];
+                    //            green_specular += object_light_coefficient[i][4] * k->second[1];
+                    //            blue_specular += object_light_coefficient[i][4] * k->second[2];
+                    //        }
+                    //        red_diffuse *= object_light_coefficient[i][0];
+                    //        green_diffuse *= object_light_coefficient[i][1];
+                    //        blue_diffuse *= object_light_coefficient[i][2];
+                    //    }
+                    //}
+                    std::vector<std::vector<std::vector<float>>>vetices_temp = vetices;
+                    std::vector<std::vector<float>> temp_2D_vector1 = { {1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1} };
+                    for (int i = 0; i < 4; i++) {
+                        for (int j = 0; j < 4; j++) {
+                            float temp = 0;
+                            for (int k = 0; k < 4; k++) {
+                                temp += perspective_projection[i][k] * V_matrix[k][j];
+                            }
+                            temp_2D_vector1[i][j] = temp;
+                        }
+                    }
+                    std::vector<float>vertice_temp;
+                    for (int i = 0; i < vetices.size(); i++) {
+                        for (int j = 0; j < vetices[i].size(); j++) {
+                            for (int k = 0; k < temp_2D_vector1.size(); k++) {
+                                float temp = 0;
+                                for (int l = 0; l < temp_2D_vector1[k].size(); l++) {
+                                    temp += temp_2D_vector1[k][l] * vetices[i][j][l];
+                                }
+                                vertice_temp.push_back(temp);
+                            }
+                            vetices[i][j] = vertice_temp;
+                            vertice_temp.clear();
+                        }
+                    }
+                    for (int i = 0; i < face.size(); i++) {
+                        for (int j = 0; j < face[i].size(); j++) {
+                            float x1 = vetices[i][face[i][j][0] - 1][0], y1 = vetices[i][face[i][j][0] - 1][1], z1 = vetices[i][face[i][j][0] - 1][2], w1 = vetices[i][face[i][j][0] - 1][3],
+                                x2 = vetices[i][face[i][j][1] - 1][0], y2 = vetices[i][face[i][j][1] - 1][1], z2 = vetices[i][face[i][j][1] - 1][2], w2 = vetices[i][face[i][j][1] - 1][3],
+                                x3 = vetices[i][face[i][j][2] - 1][0], y3 = vetices[i][face[i][j][2] - 1][1], z3 = vetices[i][face[i][j][2] - 1][2], w3 = vetices[i][face[i][j][2] - 1][3];
+                            float  line_x1 =x1/ w1, line_y1=y1 / w1, line_z1=z1 / w1, line_x2=x2 / w2, line_y2 =y2/ w2, line_z2 =z2/ w2, line_x3=x3/w3, line_y3=y3/w3, line_z3=z3/w3;
+                            line_x1 = line_x1 * width / 4 + width / 2, line_y1 = height - (line_y1 * height / 4 + height / 2),
+                                line_x2 = line_x2 * width / 4 + width / 2, line_y2 = height - (line_y2 * height / 4 + height / 2),
+                                line_x3 = line_x3 * width / 4 + width / 2, line_y3 = height - (line_y3 * height / 4 + height / 2);
+                            float t11 = line_x1 - line_x2, t12 = line_y1 - line_y2, t13 = line_z1 - line_z2, t21 = line_x1 - line_x3, t22 = line_y1 - line_y3, t23 = line_z1 - line_z3;
+                            n1 = t12 * t23 - t13 * t22, n2 = t13 * t21 - t11 * t23, n3 = t11 * t22 - t12 * t21;
+                            D = -n1 * line_x1 - n2 * line_y1 - n3 * line_z1;
+                            if (line_x1 > line_x2) {
+                                float temp = line_x1;
+                                line_x1 = line_x2;
+                                line_x2 = temp;
+                                temp = line_y1;
+                                line_y1 = line_y2;
+                                line_y2 = temp;
+                            }
+                            current_z = -(n1 * line_x1 + n2 * line_y1 + D) / n3; x_z_minus = n1 / n3; y_z_minus = n2 / n3;
+                            alter_current_z =- (n1 * line_x3 + n2 * line_y3 + D) / n3;
+                            float target_z = -(n1 * line_x2 + n2 * line_y2 + D) / n3, temp_z = current_z;;
+                            int a = line_y2 - line_y1, b = -(line_x2 - line_x1);
+                            if (line_y1 < line_y2) {
+                                if (a <= -b) {
+                                    int d = a + (b / 2);
+                                    while (line_x1 < line_x2) {
+                                        line_x1++;
+                                        current_z -= x_z_minus;
+                                        if (d < 0) {
+                                            d += a;
+                                        }
+                                        else {
+                                            d += (a + b);
+                                            line_y1++;
+                                            current_z -= y_z_minus;
+                                        }
+                                        temp_z = current_z;
+                                        float  c1 = w1 - x1 , c2 = w2 - x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + x1; c2 = w2 + x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - y1; c2 = w2 - y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + y1; c2 = w2 + y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = z1; c2 = z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - z1; c2 = w2 - z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }                                      
+                                        midpoint_line_drawing(line_x1, line_y1, line_x3, line_y3, object_light_coefficient[i][0] * 255, object_light_coefficient[i][1] * 255, object_light_coefficient[i][2] * 255);
+                                        current_z = temp_z;
+                                        display();
+                                    }
+                                }
+                                else if (a > -b) {
+                                    int d = -b - (a / 2);
+                                    while (line_y1 < line_y2) {
+                                        line_y1++;
+                                        current_z -= y_z_minus;
+                                        if (d < 0) {
+                                            d -= b;
+                                        }
+                                        else {
+                                            d += (-a - b);
+                                            line_x1++;
+                                            current_z -= x_z_minus;
+                                        }
+                                        temp_z = current_z;
+                                        float  c1 = w1 - x1, c2 = w2 - x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + x1; c2 = w2 + x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - y1; c2 = w2 - y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + y1; c2 = w2 + y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = z1; c2 = z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - z1; c2 = w2 - z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        midpoint_line_drawing(line_x1, line_y1, line_x3, line_y3, object_light_coefficient[i][0] * 255, object_light_coefficient[i][1] * 255, object_light_coefficient[i][2] * 255);
+                                        current_z = temp_z;
+                                        display();
+                                    }
+                                }
+                            }
+                            else {
+                                if (a > b) {
+                                    int d = -a + (b / 2);
+                                    while (line_x1 < line_x2) {
+                                        line_x1++;
+                                        current_z -= x_z_minus;
+                                        if (d < 0) {
+                                            d -= a;
+                                        }
+                                        else {
+                                            d += (-a + b);
+                                            line_y1--;
+                                            current_z += y_z_minus;
+                                        }
+                                        temp_z = current_z;
+                                        float  c1 = w1 - x1, c2 = w2 - x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + x1; c2 = w2 + x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - y1; c2 = w2 - y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + y1; c2 = w2 + y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = z1; c2 = z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - z1; c2 = w2 - z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        midpoint_line_drawing(line_x1, line_y1, line_x3, line_y3, object_light_coefficient[i][0] * 255, object_light_coefficient[i][1] * 255, object_light_coefficient[i][2] * 255);
+                                        current_z = temp_z;
+                                        display();
+                                    }
+                                }
+                                else if (b > a) {
+                                    int d = -b + (a / 2);
+                                    while (line_y1 > line_y2) {
+                                        line_y1--;
+                                        current_z += y_z_minus;
+                                        if (d < 0) {
+                                            d -= b;
+                                        }
+                                        else {
+                                            d += (a - b);
+                                            line_x1++;
+                                            current_z -= x_z_minus;
+                                        }
+                                        temp_z = current_z;
+                                        float  c1 = w1 - x1, c2 = w2 - x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + x1; c2 = w2 + x2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - y1; c2 = w2 - y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 + y1; c2 = w2 + y2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = z1; c2 = z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        c1 = w1 - z1; c2 = w2 - z2, t = c1 / (c1 - c2);
+                                        if (c1 < 0 && c2 < 0) {
+                                            continue;
+                                        }
+                                        else if ((c1 < 0 && c2 >= 0) || (c2 < 0 && c1 >= 0)) {
+                                            float new_x = x1 + t * (x2 - x1), new_y = y1 + t * (y2 - y1), new_z = z1 + t * (z2 - z1), new_w = w1 + t * (w2 - w1);
+                                            if (c1 < 0) {
+                                                x1 = new_x, y1 = new_y, z1 = new_z, w1 = new_w;
+                                            }
+                                            else {
+                                                x2 = new_x, y2 = new_y, z2 = new_z, w2 = new_w;
+                                            }
+                                        }
+                                        midpoint_line_drawing(line_x1, line_y1, line_x3, line_y3, object_light_coefficient[i][0] * 255, object_light_coefficient[i][1] * 255, object_light_coefficient[i][2] * 255);
+                                        current_z = temp_z;
+                                        display();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    vetices = vetices_temp;
+                }
+                display();
+                std::cout << command << std::endl;
+                system("pause");
+                z_buffer = std::vector<std::vector<float>>(width, std::vector<float>(height, FLT_MAX));
+                c_buffer = std::vector<std::vector<std::vector<float>>>(width, std::vector<std::vector<float>>(height, std::vector<float>(3, -1)));
+                for (int i = 0; i < c_buffer.size(); i++) {
+                    for (int j = 0; j < c_buffer[i].size(); j++) {
+                        c_buffer[i][j][0] = background_color[0] ;
+                        c_buffer[i][j][1] = background_color[1] ;
+                        c_buffer[i][j][2] = background_color[2] ;
+                    }
+                }
+                current_z = FLT_MAX;
+                x_z_minus = 0;
+                y_z_minus = 0;
+                glClear(GL_COLOR_BUFFER_BIT);
+                glClearColor(0.0, 0.0, 0.0, 0.0);
+                glFlush();
+                break;
+            case(14):
+                std::cout << command + " ";
+                file >> command;
+                ambient[0] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                ambient[1] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                ambient[2] = std::stof(command);
+                std::cout << command + " " << std::endl;
+                break;
+            case(15):
+                std::cout << command + " ";
+                file >> command;
+                background_color[0] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                background_color[1] = std::stof(command);
+                std::cout << command + " ";
+                file >> command;
+                background_color[2] = std::stof(command);
+                std::cout << command << std::endl;
+                for (int i = 0; i < c_buffer.size(); i++) {
+                    for (int j = 0; j < c_buffer[i].size(); j++) {
+                        c_buffer[i][j][0] = background_color[0] ;
+                        c_buffer[i][j][1] = background_color[1] ;
+                        c_buffer[i][j][2] = background_color[2] ;
+                    }
+                }
+                break;
+            case(16):
+            {
+                std::cout << command + " ";
+                int index;
+                std::vector<float>light_temp;
+                file >> command;
+                std::cout << command + " ";
+                index = std::stoi(command);
+                file >> command;
+                std::cout << command + " ";
+                light_temp.push_back(std::stof(command));
+                file >> command;
+                std::cout << command + " ";
+                light_temp.push_back(std::stof(command));
+                file >> command;
+                std::cout << command + " ";
+                light_temp.push_back(std::stof(command));
+                file >> command;
+                std::cout << command + " ";
+                light_temp.push_back(std::stof(command));
+                file >> command;
+                std::cout << command << std::endl;
+                light_temp.push_back(std::stof(command));
+                file >> command;
+                std::cout << command << std::endl;
+                light_temp.push_back(std::stof(command));
+                lights.insert({ index,light_temp });
+            }
+            break;
+            default:
+                break;
+            }
+        }
+        else {
+            std::getline(file, command);
+        }
+    }
+}
+int main(int argc, char* argv[]) {
+    object_file_path = argv[0];
+    for (int i = object_file_path.size() - 1; i >= 0; i--) {
+        if (object_file_path[i] == '\\') {
+            break;
+        }
+        else {
+            object_file_path.pop_back();
+        }
+    }
+    file.open(argv[1]);
+    std::string command;
+    file >> command;
+    width = stoi(command);
+    file >> command;
+    height = stoi(command);
+    z_buffer = std::vector<std::vector<float>>(width, std::vector<float>(height, FLT_MAX));
+    c_buffer = std::vector<std::vector<std::vector<float>>>(width, std::vector<std::vector<float>>(height, std::vector<float>(3, -1)));
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_RGBA | GLUT_SINGLE);
+    glutInitWindowSize(width, height);
+    glutInitWindowPosition(100, 100);
+    gluOrtho2D(0, width, 0, height);
+    window = glutCreateWindow("homework 4");
+    glutSwapBuffers();
+    glutDisplayFunc(display);
+    /*glutMouseFunc(mouse); */
+    /*glutKeyboardFunc(draw_mode);*/
+    glutKeyboardFunc(draw);
+    gluOrtho2D(0, width, 0, height);
+    glutMainLoop();
+}
+void display() {
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    //glClear(GL_COLOR_BUFFER_BIT);  
+    glFlush();
+}
+void drawSquare(int x, int y, float red, float green, float blue) {
+    glPointSize(3);
+    glBegin(GL_POINTS);
+    glColor3f(red, green, blue);
+    glVertex2i(x, height - y);
+    glEnd();
+}
+void midpoint_line_drawing(int x1, int y1, int x2, int y2, float red, float green, float blue) {
+    if (x1 > x2) {
+        int temp = x1;
+        x1 = x2;
+        x2 = temp;
+        temp = y1;
+        y1 = y2;
+        y2 = temp;
+        current_z = alter_current_z;
+    }
+    int a = y2 - y1, b = -(x2 - x1);
+    if (y1 < y2) {
+        if (a <= -b) {
+            int d = a + (b / 2);
+            while (x1 < x2) {
+                x1++;
+                current_z -= x_z_minus;
+                if (d < 0) {
+                    d += a;
+                }
+                else {
+                    d += (a + b);
+                    y1++;
+                    current_z -= y_z_minus;
+                }
+                if (z_buffer[x1][y1] > current_z) {
+                    z_buffer[x1][y1] = current_z;
+                    c_buffer[x1][y1][0] = red;
+                    c_buffer[x1][y1][1] = green;
+                    c_buffer[x1][y1][2] = blue;
+                    drawSquare(x1, y1, red, green, blue);
+                }
+                else {
+                    drawSquare(x1, y1, c_buffer[x1][y1][0], c_buffer[x1][y1][1], c_buffer[x1][y1][2]);
+                }
+            }
+        }
+        else if (a >= -b) {
+            int d = -b - (a / 2);
+            while (y1 < y2) {
+                y1++;
+                current_z -= y_z_minus;
+                if (d < 0) {
+                    d -= b;
+                }
+                else {
+                    d += (-a - b);
+                    x1++;
+                    current_z -= x_z_minus;
+                }
+                if (z_buffer[x1][y1] > current_z) {
+                    z_buffer[x1][y1] = current_z;
+                    c_buffer[x1][y1][0] = red;
+                    c_buffer[x1][y1][1] = green;
+                    c_buffer[x1][y1][2] = blue;
+                    drawSquare(x1, y1, red, green, blue);
+                }
+                else {
+                    drawSquare(x1, y1, c_buffer[x1][y1][0], c_buffer[x1][y1][1], c_buffer[x1][y1][2]);
+                }
+            }
+        }
+    }
+    else {
+        if (a >= b) {
+            int d = -a + (b / 2);
+            while (x1 < x2) {
+                x1++;
+                current_z -= x_z_minus;
+                if (d < 0) {
+                    d -= a;
+                }
+                else {
+                    d += (-a + b);
+                    y1--;
+                    current_z += y_z_minus;
+                }
+                if (z_buffer[x1][y1] > current_z) {
+                    z_buffer[x1][y1] = current_z;
+                    c_buffer[x1][y1][0] = red;
+                    c_buffer[x1][y1][1] = green;
+                    c_buffer[x1][y1][2] = blue;
+                    drawSquare(x1, y1, red, green, blue);
+                }
+                else {
+                    drawSquare(x1, y1, c_buffer[x1][y1][0], c_buffer[x1][y1][1], c_buffer[x1][y1][2]);
+                }
+            }
+        }
+        else if (b >= a) {
+            int d = -b + (a / 2);
+            while (y1 > y2) {
+                y1--;
+                current_z += y_z_minus;
+                if (d < 0) {
+                    d -= b;
+                }
+                else {
+                    d += (a - b);
+                    x1++;
+                    current_z -= x_z_minus;
+                }
+                if (z_buffer[x1][y1] > current_z) {
+                    z_buffer[x1][y1] = current_z;
+                    c_buffer[x1][y1][0] = red;
+                    c_buffer[x1][y1][1] = green;
+                    c_buffer[x1][y1][2] = blue;
+                    drawSquare(x1, y1, red, green, blue);
+                }
+                else {
+                    drawSquare(x1, y1, c_buffer[x1][y1][0], c_buffer[x1][y1][1], c_buffer[x1][y1][2]);
+                }
+            }
+        }
+    }
+}
+void midpoint_circle_drawing(int x1, int y1, int x2, int y2, float red, float green, float blue) {
+    int y = sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)), x = 0, d = 1 - y;
+    drawSquare(x1, y1, red, green, blue);
+    while (x < y) {
+        if (d < 0) {
+            d += x * 2 + 3;
+            x++;
+        }
+        else {
+            d += 2 * (x - y) + 5;
+            x++;
+            y--;
+        }
+        drawSquare(x + x1, y + y1, red, green, blue);
+        drawSquare(x1 - x, y + y1, red, green, blue);
+        drawSquare(x + x1, y1 - y, red, green, blue);
+        drawSquare(x1 - x, y1 - y, red, green, blue);
+    }
+    x = sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)), d = -(1 - x), y = 0;
+    while (y < x) {
+        if (d > 0) {
+            d -= y * 2 + 3;
+            y++;
+        }
+        else {
+            d -= 2 * (y - x) + 5;
+            x--;
+            y++;
+        }
+        drawSquare(x1 + x, y + y1, red, green, blue);
+        drawSquare(x1 + x, y1 - y, red, green, blue);
+        drawSquare(x1 - x, y + y1, red, green, blue);
+        drawSquare(x1 - x, y1 - y, red, green, blue);
+    }
+}
+
+
+
+
+
+
+
